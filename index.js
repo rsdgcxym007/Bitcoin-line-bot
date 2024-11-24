@@ -120,11 +120,11 @@ async function checkPriceChanges(prices) {
 
         // ตรวจสอบว่าเวลาห่าง 5 นาทีหรือไม่
         const timeDiffMinutes = (now - lastUpdatedTime) / (1000 * 60); // แปลงเป็นนาที
-        if (timeDiffMinutes >= 5) {
+        if (timeDiffMinutes >= 0.1) {
           const percentageChange =
             ((currentPrice - previousPrice) / previousPrice) * 100;
 
-          if (Math.abs(percentageChange) >= 5) {
+          if (Math.abs(percentageChange) >= 0.1) {
             const message = `⚠️ ราคาเหรียญ ${coin} เปลี่ยนแปลง ${percentageChange.toFixed(
               2
             )}%\nราคาก่อนหน้า: ${previousPrice.toLocaleString()} THB\nราคาปัจจุบัน: ${currentPrice.toLocaleString()} THB`;
