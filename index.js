@@ -143,7 +143,7 @@ app.post("/webhook", async (req, res) => {
 });
 
 // เปิดเซิร์ฟเวอร์
-const PORT = 8080;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`เซิร์ฟเวอร์กำลังทำงานที่ http://localhost:${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
