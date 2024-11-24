@@ -12,11 +12,11 @@ console.log("process.env.DATABASE_URL", process.env.DATABASE_URL);
 // สร้างการเชื่อมต่อ PostgreSQL
 const { Pool } = require("pg");
 const pool = new Pool({
-  user: process.env.DB_USER,
-  host: process.env.DB_HOST,
-  database: process.env.DB_NAME,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
+  connectionString:
+    "postgresql://postgres:cGcGhKVxpZxcCoNjsXrlWTPcobJbaEUm@autorack.proxy.rlwy.net:55129/railway", // ใช้ Public Endpoint
+  ssl: {
+    rejectUnauthorized: false, // Railway ต้องการ SSL
+  },
 });
 // ฟังก์ชันเชื่อมต่อฐานข้อมูล
 async function connectToDatabase() {
