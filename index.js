@@ -10,7 +10,13 @@ const pool = new Pool({
 });
 
 // Cryptocurrencies to monitor
-const coins = ["stellar", "cardano", "ripple", "actl", "sandbox"]; // ใช้ชื่อเหรียญในรูปแบบที่ CoinGecko รองรับ
+const coins = [
+  "stellar",
+  "cardano",
+  "ripple",
+  "act-i-the-ai-prophecy",
+  "the-sandbox",
+]; // ใช้ชื่อเหรียญในรูปแบบที่ CoinGecko รองรับ
 
 // Fetch cryptocurrency prices in THB from CoinGecko
 async function fetchCryptoPricesFromCoinGecko() {
@@ -177,8 +183,7 @@ async function monitorCryptoPrices() {
   }
 }
 
-// Run the price monitoring process every 3 minutes
-setInterval(monitorCryptoPrices, 5 * 60 * 1000);
+setInterval(monitorCryptoPrices, 10 * 60 * 1000);
 
 // Express server for LINE Webhook
 const app = express();
