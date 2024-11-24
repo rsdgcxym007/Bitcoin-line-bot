@@ -74,7 +74,7 @@ async function sendLineMessage(userId, message) {
   }
 }
 
-// ฟังก์ชันจัดการ User ID ในฐานข้อมูล
+// ฟังก์ชันจัดการ User ID ในฐานข้อมูลxxxx
 async function saveUserIdToDB(userId) {
   try {
     const result = await pool.query(
