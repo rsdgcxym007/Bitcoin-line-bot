@@ -75,6 +75,7 @@ async function sendLineMessage(userId, message) {
 
 // ฟังก์ชันจัดการ User ID ในฐานข้อมูลxxxx
 async function saveUserIdToDB(userId) {
+  console.log("กำลังบันทึก User ID ลงฐานข้อมูล:", userId);
   try {
     const result = await pool.query(
       "INSERT INTO test_table (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING id",
@@ -126,7 +127,7 @@ app.get("/notify-bitcoin", async (req, res) => {
 // Endpoint Webhook
 app.post("/webhook", async (req, res) => {
   const events = req.body.events;
-  console.log("Webhook received:", events);
+  console.log("Webhook received:", JSON.stringify(req.body, null, 2));
 
   // ตอบกลับ LINE เพื่อยืนยันว่า Webhook ทำงานได้
   res.status(200).send("OK");
