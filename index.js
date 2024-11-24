@@ -202,7 +202,7 @@ async function monitorCryptoPrices() {
   }
 }
 
-setInterval(monitorCryptoPrices, 20000);
+setInterval(monitorCryptoPrices, 5 * 60 * 1000);
 
 // Express server for LINE Webhook
 const app = express();
