@@ -7,7 +7,7 @@ app.use(express.json());
 
 // อ่านค่าจาก .env
 const LINE_ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
-console.log("process.env.DATABASE_URL", process.env.DATABASE_URL);
+console.log("process.env.DATABASE_URL", process.env.DATABASE_PUBLIC_URL);
 
 // สร้างการเชื่อมต่อ PostgreSQL
 const { Pool } = require("pg");
