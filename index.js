@@ -12,8 +12,7 @@ console.log("process.env.DATABASE_URL", process.env.DATABASE_URL);
 // สร้างการเชื่อมต่อ PostgreSQL
 const { Pool } = require("pg");
 const pool = new Pool({
-  connectionString:
-    "postgresql://postgres:cGcGhKVxpZxcCoNjsXrlWTPcobJbaEUm@autorack.proxy.rlwy.net:55129/railway", // ใช้ Public Endpoint
+  connectionString: process.env.DATABASE_PUBLIC_URL, // ใช้ Public Endpoint
   ssl: {
     rejectUnauthorized: false, // Railway ต้องการ SSL
   },
