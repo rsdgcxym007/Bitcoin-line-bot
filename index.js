@@ -77,7 +77,7 @@ async function sendLineMessage(userId, message) {
 async function saveUserIdToDB(userId) {
   try {
     const result = await pool.query(
-      "INSERT INTO line_users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING id",
+      "INSERT INTO test_table (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING id",
       [userId]
     );
     if (result.rowCount > 0) {
@@ -92,7 +92,7 @@ async function saveUserIdToDB(userId) {
 
 async function getAllUserIdsFromDB() {
   try {
-    const result = await pool.query("SELECT user_id FROM line_users");
+    const result = await pool.query("SELECT user_id FROM test_table");
     return result.rows.map((row) => row.user_id);
   } catch (error) {
     console.error("เกิดข้อผิดพลาดในการดึง User ID จากฐานข้อมูล:", error);
