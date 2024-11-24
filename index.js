@@ -38,13 +38,22 @@ async function fetchCryptoPricesFromCoinGecko() {
 async function saveInitialPrices(prices) {
   for (const [coin, price] of Object.entries(prices)) {
     try {
-      await pool.query(
-        `INSERT INTO crypto_prices (coin_name, initial_price, current_price, checked_at)
-         VALUES ($1, $2, $2, NOW())
-         ON CONFLICT (coin_name) DO NOTHING`,
-        [coin, price]
+      // ตรวจสอบว่ามีข้อมูลในตารางอยู่แล้วหรือไม่
+      const result = await pool.query(
+        `SELECT initial_price FROM crypto_prices WHERE coin_name = $1`,
+        [coin]
       );
-      console.log(`Saved initial price for ${coin}: ${price}`);
+      // ถ้ายังไม่มีข้อมูล ให้บันทึกใหม่
+      if (result.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO crypto_prices (coin_name, initial_price, current_price, checked_at)
+           VALUES ($1, $2, $2, NOW())`,
+          [coin, price]
+        );
+        console.log(`Saved initial price for ${coin}: ${price}`);
+      } else {
+        console.log(`Initial price for ${coin} already exists. Skipping.`);
+      }
     } catch (error) {
       console.error(`Error saving initial price for ${coin}:`, error.message);
     }
@@ -139,7 +148,7 @@ async function monitorCryptoPrices() {
   try {
     const prices = await fetchCryptoPricesFromCoinGecko();
     if (prices) {
-      await saveInitialPrices(prices); // บันทึกราคาเริ่มต้น
+      await saveInitialPrices(prices); // บันทึกราคาเริ่มต้นครั้งแรก
       await checkPriceChanges(prices); // ตรวจสอบราคาปัจจุบัน
     }
   } catch (error) {
@@ -148,4 +157,4 @@ async function monitorCryptoPrices() {
 }
 
 // เรียกใช้ฟังก์ชันทุก 5 นาที
-setInterval(monitorCryptoPrices, 5 * 60 * 1000);
+setInterval(monitorCryptoPrices, 10 * 60 * 1000);
