@@ -38,25 +38,64 @@ async function fetchCryptoPricesFromCoinGecko() {
 
   return prices;
 }
+async function saveCryptoPriceHistory(coin, price) {
+  try {
+    await pool.query(
+      `INSERT INTO crypto_price_history (coin_name, price, checked_at)
+       VALUES ($1, $2, NOW())`,
+      [coin, price]
+    );
+    console.log(`Saved price history for ${coin}: ${price}`);
+  } catch (error) {
+    console.error(`Error saving price history for ${coin}:`, error.message);
+  }
+}
 
+// บันทึกประวัติราคาสำหรับทุกเหรียญ
+async function saveAllPriceHistories(prices) {
+  for (const [coin, price] of Object.entries(prices)) {
+    await saveCryptoPriceHistory(coin, price);
+  }
+}
+async function getPriceBefore5Minutes(coin) {
+  try {
+    const result = await pool.query(
+      `SELECT price FROM crypto_price_history
+       WHERE coin_name = $1 AND checked_at <= NOW() - INTERVAL '5 minutes'
+       ORDER BY checked_at DESC LIMIT 1`,
+      [coin]
+    );
+
+    if (result.rows.length > 0) {
+      return parseFloat(result.rows[0].price);
+    } else {
+      return null; // ไม่มีข้อมูลก่อนหน้า 5 นาที
+    }
+  } catch (error) {
+    console.error(
+      `Error fetching price before 5 minutes for ${coin}:`,
+      error.message
+    );
+    return null;
+  }
+}
 // Save or update cryptocurrency prices in the database
 async function saveCryptoPricesToDB(prices) {
   const now = new Date();
   for (const [coin, price] of Object.entries(prices)) {
     try {
-      // ตรวจสอบข้อมูลในตาราง
       const result = await pool.query(
         `SELECT current_price FROM crypto_prices WHERE coin_name = $1`,
         [coin]
       );
 
       if (result.rows.length > 0) {
-        // คำนวณการเปลี่ยนแปลง (%)
         const previousPrice = parseFloat(result.rows[0].current_price);
         const percentageChange =
-          ((price - previousPrice) / previousPrice) * 100;
+          previousPrice && previousPrice !== 0
+            ? ((price - previousPrice) / previousPrice) * 100
+            : 0;
 
-        // อัปเดตข้อมูลในฐานข้อมูล
         await pool.query(
           `UPDATE crypto_prices
            SET previous_price = current_price,
@@ -66,21 +105,18 @@ async function saveCryptoPricesToDB(prices) {
            WHERE coin_name = $4`,
           [price, percentageChange, now, coin]
         );
-
         console.log(
-          `Updated price for ${coin}: ${price} THB (Change: ${percentageChange.toFixed(
+          `Updated ${coin}: Current = ${price}, Change = ${percentageChange.toFixed(
             2
-          )}%)`
+          )}%`
         );
       } else {
-        // เพิ่มข้อมูลใหม่ในกรณีที่เหรียญยังไม่มีในฐานข้อมูล
         await pool.query(
           `INSERT INTO crypto_prices (coin_name, current_price, previous_price, percentage_change, updated_at)
            VALUES ($1, $2, NULL, NULL, $3)`,
           [coin, price, now]
         );
-
-        console.log(`Inserted new coin ${coin} with price ${price} THB`);
+        console.log(`Inserted new coin ${coin} with Current Price = ${price}`);
       }
     } catch (error) {
       console.error(`Error saving price for ${coin}:`, error.message);
@@ -88,52 +124,35 @@ async function saveCryptoPricesToDB(prices) {
   }
 }
 
-// Check for significant price changes and notify users
-async function checkPriceChanges(prices) {
-  const now = new Date();
+async function checkPriceChanges() {
+  try {
+    const result = await pool.query(
+      `SELECT coin_name, percentage_change, current_price, previous_price FROM crypto_prices`
+    );
 
-  for (const [coin, currentPrice] of Object.entries(prices)) {
-    try {
-      const result = await pool.query(
-        `SELECT current_price, updated_at FROM crypto_prices WHERE coin_name = $1`,
-        [coin]
-      );
+    for (const row of result.rows) {
+      const {
+        coin_name: coin,
+        percentage_change,
+        current_price,
+        previous_price,
+      } = row;
 
-      if (result.rows.length > 0) {
-        const { current_price: previousPrice, updated_at: lastUpdated } =
-          result.rows[0];
-        const lastUpdatedTime = new Date(lastUpdated);
+      if (Math.abs(percentage_change) >= 5) {
+        const message = `⚠️ ราคาเหรียญ ${coin} เปลี่ยนแปลง ${percentage_change.toFixed(
+          2
+        )}%\nราคาก่อนหน้า: ${
+          previous_price?.toLocaleString() || "N/A"
+        } THB\nราคาปัจจุบัน: ${current_price.toLocaleString()} THB`;
 
-        // ตรวจสอบว่าเวลาห่าง 5 นาทีหรือไม่
-        const timeDiffMinutes = (now - lastUpdatedTime) / (1000 * 60); // แปลงเป็นนาที
-        if (timeDiffMinutes >= 5) {
-          const percentageChange =
-            ((currentPrice - previousPrice) / previousPrice) * 100;
-
-          if (Math.abs(percentageChange) >= 5) {
-            const message = `⚠️ ราคาเหรียญ ${coin} เปลี่ยนแปลง ${percentageChange.toFixed(
-              2
-            )}%\nราคาก่อนหน้า: ${previousPrice.toLocaleString()} THB\nราคาปัจจุบัน: ${currentPrice.toLocaleString()} THB`;
-
-            // ดึง User IDs และส่งข้อความ
-            const userIds = await getAllUserIdsFromDB();
-            for (const userId of userIds) {
-              await sendLineMessage(userId, message);
-            }
-          }
-
-          // อัปเดตราคาในฐานข้อมูล
-          await pool.query(
-            `UPDATE crypto_prices SET previous_price = current_price, current_price = $1, updated_at = $2 WHERE coin_name = $3`,
-            [currentPrice, now, coin]
-          );
-        } else {
-          console.log(`ยังไม่ครบ 5 นาทีสำหรับเหรียญ ${coin}`);
+        const userIds = await getAllUserIdsFromDB();
+        for (const userId of userIds) {
+          await sendLineMessage(userId, message);
         }
       }
-    } catch (error) {
-      console.error(`Error checking price changes for ${coin}:`, error.message);
     }
+  } catch (error) {
+    console.error("Error checking price changes:", error.message);
   }
 }
 
@@ -183,7 +202,7 @@ async function monitorCryptoPrices() {
   }
 }
 
-setInterval(monitorCryptoPrices, 10 * 60 * 1000);
+setInterval(monitorCryptoPrices, 20000);
 
 // Express server for LINE Webhook
 const app = express();
