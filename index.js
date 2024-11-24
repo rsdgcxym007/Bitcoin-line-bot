@@ -1,12 +1,13 @@
 const axios = require("axios");
 const { Pool } = require("pg");
-require("dotenv").config();
 const express = require("express");
+require("dotenv").config();
 
 // PostgreSQL connection setup
 const pool = new Pool({
   connectionString: process.env.DATABASE_PUBLIC_URL,
   ssl: { rejectUnauthorized: false },
+  max: 20, // Adjust based on your server's capacity
 });
 
 // Cryptocurrencies to monitor
@@ -16,28 +17,27 @@ const coins = [
   "ripple",
   "act-i-the-ai-prophecy",
   "the-sandbox",
-]; // ใช้ชื่อเหรียญในรูปแบบที่ CoinGecko รองรับ
+];
 
 // Fetch cryptocurrency prices in THB from CoinGecko
 async function fetchCryptoPricesFromCoinGecko() {
   const prices = {};
-
   try {
     const response = await axios.get(
       `https://api.coingecko.com/api/v3/simple/price?ids=${coins.join(
         ","
       )}&vs_currencies=thb`
     );
-
     for (const coin of coins) {
-      prices[coin] = response.data[coin].thb; // ราคาในหน่วย THB
+      prices[coin] = response.data[coin].thb;
     }
   } catch (error) {
     console.error("Error fetching prices from CoinGecko API:", error.message);
   }
-
   return prices;
 }
+
+// Save price history for each coin
 async function saveCryptoPriceHistory(coin, price) {
   try {
     await pool.query(
@@ -51,34 +51,13 @@ async function saveCryptoPriceHistory(coin, price) {
   }
 }
 
-// บันทึกประวัติราคาสำหรับทุกเหรียญ
+// Save price histories for all coins
 async function saveAllPriceHistories(prices) {
   for (const [coin, price] of Object.entries(prices)) {
     await saveCryptoPriceHistory(coin, price);
   }
 }
-async function getPriceBefore5Minutes(coin) {
-  try {
-    const result = await pool.query(
-      `SELECT price FROM crypto_price_history
-       WHERE coin_name = $1 AND checked_at <= NOW() - INTERVAL '5 minutes'
-       ORDER BY checked_at DESC LIMIT 1`,
-      [coin]
-    );
 
-    if (result.rows.length > 0) {
-      return parseFloat(result.rows[0].price);
-    } else {
-      return null; // ไม่มีข้อมูลก่อนหน้า 5 นาที
-    }
-  } catch (error) {
-    console.error(
-      `Error fetching price before 5 minutes for ${coin}:`,
-      error.message
-    );
-    return null;
-  }
-}
 // Save or update cryptocurrency prices in the database
 async function saveCryptoPricesToDB(prices) {
   const now = new Date();
@@ -93,7 +72,9 @@ async function saveCryptoPricesToDB(prices) {
         const previousPrice = parseFloat(result.rows[0].current_price);
         const percentageChange =
           previousPrice && previousPrice !== 0
-            ? ((price - previousPrice) / previousPrice) * 100
+            ? parseFloat(
+                (((price - previousPrice) / previousPrice) * 100).toFixed(2)
+              )
             : 0;
 
         await pool.query(
@@ -124,6 +105,7 @@ async function saveCryptoPricesToDB(prices) {
   }
 }
 
+// Check for significant price changes and notify users
 async function checkPriceChanges() {
   try {
     const result = await pool.query(
@@ -194,14 +176,18 @@ async function sendLineMessage(userId, message) {
 
 // Monitor and process cryptocurrency prices
 async function monitorCryptoPrices() {
-  const pricesInTHB = await fetchCryptoPricesFromCoinGecko();
-
-  if (pricesInTHB) {
-    await saveCryptoPricesToDB(pricesInTHB);
-    await checkPriceChanges(pricesInTHB);
+  try {
+    const pricesInTHB = await fetchCryptoPricesFromCoinGecko();
+    if (pricesInTHB) {
+      await saveCryptoPricesToDB(pricesInTHB);
+      await checkPriceChanges();
+    }
+  } catch (error) {
+    console.error("Error in monitoring crypto prices:", error.message);
   }
 }
 
+// Start monitoring every 5 minutes
 setInterval(monitorCryptoPrices, 5 * 60 * 1000);
 
 // Express server for LINE Webhook
