@@ -10,47 +10,27 @@ const pool = new Pool({
 });
 
 // Cryptocurrencies to monitor
-const coins = ["XLM", "ADA", "XRP", "ACT", "SAND"];
+const coins = ["stellar", "cardano", "ripple", "actl", "sandbox"]; // ใช้ชื่อเหรียญในรูปแบบที่ CoinGecko รองรับ
 
-// Fetch cryptocurrency prices from Binance
-async function fetchCryptoPricesFromBinance() {
-  const coinPairs = coins.map((coin) => `${coin}USDT`); // Binance uses USDT pairs
+// Fetch cryptocurrency prices in THB from CoinGecko
+async function fetchCryptoPricesFromCoinGecko() {
   const prices = {};
 
   try {
-    for (const pair of coinPairs) {
-      const response = await axios.get(
-        `https://api.binance.com/api/v3/ticker/price?symbol=${pair}`
-      );
-      const usdtPrice = parseFloat(response.data.price); // Price in USDT
-      const coin = pair.replace("USDT", ""); // Remove USDT from coin name
-      prices[coin] = usdtPrice;
+    const response = await axios.get(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${coins.join(
+        ","
+      )}&vs_currencies=thb`
+    );
+
+    for (const coin of coins) {
+      prices[coin] = response.data[coin].thb; // ราคาในหน่วย THB
     }
   } catch (error) {
-    console.error("Error fetching prices from Binance API:", error.message);
+    console.error("Error fetching prices from CoinGecko API:", error.message);
   }
 
   return prices;
-}
-
-// Convert USDT prices to THB
-async function convertToTHB(pricesInUSDT) {
-  try {
-    const response = await axios.get(
-      "https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=thb"
-    );
-    const usdtToThbRate = response.data.tether.thb; // Conversion rate for 1 USDT to THB
-    const pricesInTHB = {};
-
-    for (const [coin, usdtPrice] of Object.entries(pricesInUSDT)) {
-      pricesInTHB[coin] = usdtPrice * usdtToThbRate;
-    }
-
-    return pricesInTHB;
-  } catch (error) {
-    console.error("Error converting prices to THB:", error.message);
-    return null;
-  }
 }
 
 // Save or update cryptocurrency prices in the database
@@ -120,11 +100,11 @@ async function checkPriceChanges(prices) {
 
         // ตรวจสอบว่าเวลาห่าง 5 นาทีหรือไม่
         const timeDiffMinutes = (now - lastUpdatedTime) / (1000 * 60); // แปลงเป็นนาที
-        if (timeDiffMinutes >= 0.1) {
+        if (timeDiffMinutes >= 5) {
           const percentageChange =
             ((currentPrice - previousPrice) / previousPrice) * 100;
 
-          if (Math.abs(percentageChange) >= 0.1) {
+          if (Math.abs(percentageChange) >= 5) {
             const message = `⚠️ ราคาเหรียญ ${coin} เปลี่ยนแปลง ${percentageChange.toFixed(
               2
             )}%\nราคาก่อนหน้า: ${previousPrice.toLocaleString()} THB\nราคาปัจจุบัน: ${currentPrice.toLocaleString()} THB`;
@@ -189,8 +169,7 @@ async function sendLineMessage(userId, message) {
 
 // Monitor and process cryptocurrency prices
 async function monitorCryptoPrices() {
-  const pricesInUSDT = await fetchCryptoPricesFromBinance();
-  const pricesInTHB = await convertToTHB(pricesInUSDT);
+  const pricesInTHB = await fetchCryptoPricesFromCoinGecko();
 
   if (pricesInTHB) {
     await saveCryptoPricesToDB(pricesInTHB);
