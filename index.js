@@ -1,6 +1,9 @@
 const axios = require("axios");
 const { Pool } = require("pg");
 require("dotenv").config();
+const express = require("express");
+const app = express();
+app.use(express.json());
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_PUBLIC_URL,
@@ -155,6 +158,49 @@ async function monitorCryptoPrices() {
     console.error("Error monitoring crypto prices:", error.message);
   }
 }
+app.post("/webhook", async (req, res) => {
+  const events = req.body.events;
+  console.log("Webhook received:", events);
+
+  // ตอบกลับ LINE เพื่อยืนยันว่า Webhook ทำงานได้
+  res.status(200).send("OK");
+
+  // ดึง User ID จากข้อความและบันทึกลงฐานข้อมูล
+  if (events && events.length > 0) {
+    const userId = events[0]?.source?.userId; // ดึง User ID
+    console.log("User ID ที่รับได้:", userId);
+
+    const result = await saveUserIdToDB(userId);
+    console.log(result.message); // ดูข้อความจากฟังก์ชัน
+  }
+});
+async function saveUserIdToDB(userId) {
+  console.log("กำลังบันทึก User ID ลงฐานข้อมูล:", userId);
+  try {
+    const result = await pool.query(
+      "INSERT INTO test_table (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING RETURNING id",
+      [userId]
+    );
+
+    if (result.rowCount > 0) {
+      console.log("บันทึก User ID ลงฐานข้อมูลสำเร็จ:", userId);
+      return { success: true, message: "User ID saved successfully" };
+    } else {
+      console.log("User ID มีอยู่ในฐานข้อมูลแล้ว:", userId);
+      return { success: false, message: "User ID already exists" };
+    }
+  } catch (error) {
+    console.error(
+      "เกิดข้อผิดพลาดในการบันทึก User ID ลงฐานข้อมูล:",
+      error.message
+    );
+    return { success: false, error: error.message };
+  }
+}
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
 
 // เรียกใช้ฟังก์ชันทุก 5 นาที
 setInterval(monitorCryptoPrices, 30 * 60 * 1000);
