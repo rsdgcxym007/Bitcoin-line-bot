@@ -122,13 +122,19 @@ async function getAllUserIdsFromDB() {
 }
 
 // ส่งข้อความผ่าน LINE API
-async function sendLineMessage(userId, message) {
+async function sendLineMessage(userId, messages) {
   try {
+    // รวมข้อความหาก messages เป็น Array
+    const messageText = Array.isArray(messages)
+      ? messages.join("\n") // เชื่อมข้อความด้วย "\n" สำหรับแยกบรรทัด
+      : messages; // ใช้ข้อความตรงๆ หากไม่ใช่ Array
+
+    // ส่งข้อความ
     await axios.post(
       "https://api.line.me/v2/bot/message/push",
       {
         to: userId,
-        messages: [{ type: "text", text: message }],
+        messages: [{ type: "text", text: messageText }],
       },
       {
         headers: {
@@ -137,7 +143,7 @@ async function sendLineMessage(userId, message) {
         },
       }
     );
-    console.log(`Message sent to ${userId}:`, message);
+    console.log(`Message sent to ${userId}:`, messageText);
   } catch (error) {
     console.error(
       "Error sending LINE message:",
