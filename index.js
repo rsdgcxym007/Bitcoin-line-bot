@@ -157,4 +157,4 @@ async function monitorCryptoPrices() {
 }
 
 // เรียกใช้ฟังก์ชันทุก 5 นาที
-setInterval(monitorCryptoPrices, 10 * 60 * 1000);
+setInterval(monitorCryptoPrices, 30 * 60 * 1000);
