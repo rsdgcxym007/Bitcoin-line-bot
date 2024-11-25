@@ -4,6 +4,7 @@ require("dotenv").config();
 const express = require("express");
 const app = express();
 app.use(express.json());
+const cron = require("node-cron");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_PUBLIC_URL,
@@ -17,8 +18,124 @@ const coins = [
   "ripple",
   "act-i-the-ai-prophecy",
   "the-sandbox",
+  "bitcoin",
+  "dogecoin",
 ];
+cron.schedule("59 23 * * *", async () => {
+  // รันเวลา 23:59 ทุกวัน
+  try {
+    // ดึงข้อมูลราคาสูงสุดและต่ำสุด
+    const highLowQuery = `
+      SELECT coin_name,
+             MAX(current_price) AS high_price,
+             MIN(current_price) AS low_price
+      FROM coin_prices
+      GROUP BY coin_name;
+    `;
+    const highLowData = await pool.query(highLowQuery);
 
+    for (const row of highLowData.rows) {
+      const { coin_name, high_price, low_price } = row;
+
+      // บันทึกข้อมูลใน coin_price_history
+      await pool.query(
+        `INSERT INTO coin_price_history (coin_name, date, open_price, close_price, high_price, low_price)
+         VALUES ($1, CURRENT_DATE - INTERVAL '1 day', $2, $3, $4, $5)
+         ON CONFLICT (coin_name, date) DO NOTHING;`,
+        [coin_name, high_price, low_price, high_price, low_price]
+      );
+    }
+    console.log("Daily data moved to coin_price_history");
+  } catch (error) {
+    console.error("Error updating daily history:", error.message);
+  }
+});
+cron.schedule("* * * * *", async () => {
+  // รันทุก 1 นาที
+  try {
+    const response = await axios.get(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${coins.join(
+        ","
+      )}&vs_currencies=thb`
+    );
+
+    for (const coin of coins) {
+      const currentPrice = response.data[coin].thb;
+
+      // ดึงข้อมูลราคาเดิมจากฐานข้อมูล
+      const { rows } = await pool.query(
+        "SELECT * FROM coin_prices WHERE coin_name = $1",
+        [coin]
+      );
+      if (rows.length > 0) {
+        const previousData = rows[0];
+
+        // คำนวณ % การเปลี่ยนแปลง
+        const priceChange = {
+          price_15m: calculatePercentageChange(
+            previousData.price_15m,
+            currentPrice
+          ),
+          price_30m: calculatePercentageChange(
+            previousData.price_30m,
+            currentPrice
+          ),
+          price_1hr: calculatePercentageChange(
+            previousData.price_1hr,
+            currentPrice
+          ),
+          price_2hr: calculatePercentageChange(
+            previousData.price_2hr,
+            currentPrice
+          ),
+          price_4hr: calculatePercentageChange(
+            previousData.price_4hr,
+            currentPrice
+          ),
+          price_1day: calculatePercentageChange(
+            previousData.price_1day,
+            currentPrice
+          ),
+        };
+
+        // console.log(`Price change for ${coin}:`, priceChange);
+
+        // อัปเดตราคาใหม่ในฐานข้อมูล
+        await pool.query(
+          `UPDATE coin_prices
+           SET current_price = $1,
+               price_15m = CASE WHEN updated_at <= NOW() - INTERVAL '15 minutes' THEN $2 ELSE price_15m END,
+               price_30m = CASE WHEN updated_at <= NOW() - INTERVAL '30 minutes' THEN $3 ELSE price_30m END,
+               price_1hr = CASE WHEN updated_at <= NOW() - INTERVAL '1 hour' THEN $4 ELSE price_1hr END,
+               price_2hr = CASE WHEN updated_at <= NOW() - INTERVAL '2 hours' THEN $5 ELSE price_2hr END,
+               price_4hr = CASE WHEN updated_at <= NOW() - INTERVAL '4 hours' THEN $6 ELSE price_4hr END,
+               price_1day = CASE WHEN updated_at <= NOW() - INTERVAL '1 day' THEN $7 ELSE price_1day END,
+               updated_at = NOW()
+           WHERE coin_name = $8`,
+          [
+            currentPrice,
+            currentPrice,
+            currentPrice,
+            currentPrice,
+            currentPrice,
+            currentPrice,
+            currentPrice,
+            coin,
+          ]
+        );
+      } else {
+        // หากยังไม่มีข้อมูลของเหรียญนี้ ให้แทรกเข้าไปใหม่
+        await pool.query(
+          `INSERT INTO coin_prices (coin_name, current_price, price_15m, price_30m, price_1hr, price_2hr, price_4hr, price_1day, updated_at)
+           VALUES ($1, $2, $2, $2, $2, $2, $2, $2, NOW())`,
+          [coin, currentPrice]
+        );
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching or updating prices:", error.message);
+  }
+});
 // ดึงราคาจาก CoinGecko API
 async function fetchCryptoPricesFromCoinGecko() {
   const prices = {};
@@ -164,20 +281,139 @@ async function monitorCryptoPrices() {
     console.error("Error monitoring crypto prices:", error.message);
   }
 }
+const getData = async () => {
+  try {
+    const result = await pool.query("SELECT * FROM coin_prices");
+    let data = processCoinData(result.rows);
+    console.log("All data:", data);
+  } catch (error) {
+    console.log("getData", error);
+  }
+};
+const formatMessage = (coin) => {
+  return `
+เหรียญ ${coin.coin_name.toUpperCase()}:
+ราคาปัจจุบัน: ${coin.current_price.toFixed(2)} 
+- ราคาช่วง 15 นาที: ${coin.change_15m.toFixed(2)}% 
+- ราคาช่วง 30 นาที: ${coin.change_30m.toFixed(2)}% 
+- ราคาช่วง 1 ชั่วโมง: ${coin.change_1hr.toFixed(2)}% 
+- ราคาช่วง 2 ชั่วโมง: ${coin.change_2hr.toFixed(2)}% 
+- ราคาช่วง 4 ชั่วโมง: ${coin.change_4hr.toFixed(2)}% 
+- ราคาช่วง 1 วัน: ${coin.change_1day.toFixed(2)}%
+`.trim();
+};
+
+const processCoinData = (coinData) => {
+  return coinData.map((coin) => {
+    // คำนวณเปอร์เซ็นต์การเปลี่ยนแปลง
+    const processedCoin = {
+      coin_name: coin.coin_name,
+      current_price: parseFloat(coin.current_price),
+      change_15m: calculatePercentageChange(
+        parseFloat(coin.price_15m),
+        parseFloat(coin.current_price)
+      ),
+      change_30m: calculatePercentageChange(
+        parseFloat(coin.price_30m),
+        parseFloat(coin.current_price)
+      ),
+      change_1hr: calculatePercentageChange(
+        parseFloat(coin.price_1hr),
+        parseFloat(coin.current_price)
+      ),
+      change_2hr: calculatePercentageChange(
+        parseFloat(coin.price_2hr),
+        parseFloat(coin.current_price)
+      ),
+      change_4hr: calculatePercentageChange(
+        parseFloat(coin.price_4hr),
+        parseFloat(coin.current_price)
+      ),
+      change_1day: calculatePercentageChange(
+        parseFloat(coin.price_1day),
+        parseFloat(coin.current_price)
+      ),
+    };
+
+    // แปลงข้อมูลให้อยู่ในรูปแบบข้อความ
+    const message = formatMessage(processedCoin);
+    return message;
+  });
+};
+
+getData();
+function calculatePercentageChange(oldPrice, newPrice) {
+  if (!oldPrice || oldPrice === 0) return 0; // กรณีที่ไม่มีข้อมูลเดิม
+  return ((newPrice - oldPrice) / oldPrice) * 100;
+}
+
+app.get("/coingecko", async (req, res) => {
+  const prices = {};
+  try {
+    const response = await axios.get(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${coins.join(
+        ","
+      )}&vs_currencies=thb`
+    );
+    for (const coin of coins) {
+      prices[coin] = response.data[coin].thb;
+    }
+  } catch (error) {
+    console.error("Error fetching prices from CoinGecko API:", error.message);
+  }
+  console.log("prices", prices);
+
+  return prices;
+});
+app.get("/daily-report", async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT coin_name, date, open_price, close_price, high_price, low_price
+      FROM coin_price_history
+      ORDER BY date DESC;
+    `);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching daily report:", error.message);
+    res.status(500).send("Error generating daily report");
+  }
+});
+app.get("/price-report", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM coin_prices");
+
+    const report = rows.map((coin) => ({
+      coin_name: coin.coin_name,
+      current_price: coin.current_price,
+      change_15m: calculatePercentageChange(coin.price_15m, coin.current_price),
+      change_30m: calculatePercentageChange(coin.price_30m, coin.current_price),
+      change_1hr: calculatePercentageChange(coin.price_1hr, coin.current_price),
+      change_2hr: calculatePercentageChange(coin.price_2hr, coin.current_price),
+      change_4hr: calculatePercentageChange(coin.price_4hr, coin.current_price),
+      change_1day: calculatePercentageChange(
+        coin.price_1day,
+        coin.current_price
+      ),
+    }));
+
+    res.json(report);
+    console.log("report", report);
+  } catch (error) {
+    console.error("Error fetching price report:", error.message);
+    res.status(500).send("Error generating report");
+  }
+});
+
 app.post("/webhook", async (req, res) => {
   const events = req.body.events;
   console.log("Webhook received:", events);
-
-  // ตอบกลับ LINE เพื่อยืนยันว่า Webhook ทำงานได้
   res.status(200).send("OK");
-
-  // ดึง User ID จากข้อความและบันทึกลงฐานข้อมูล
   if (events && events.length > 0) {
-    const userId = events[0]?.source?.userId; // ดึง User ID
+    const userId = events[0]?.source?.userId;
     console.log("User ID ที่รับได้:", userId);
 
     const result = await saveUserIdToDB(userId);
-    console.log(result.message); // ดูข้อความจากฟังก์ชัน
+    console.log(result.message);
   }
 });
 async function saveUserIdToDB(userId) {
