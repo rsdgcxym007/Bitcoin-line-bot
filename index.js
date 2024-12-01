@@ -643,4 +643,4 @@ app.listen(PORT, () => {
 });
 
 // เรียกใช้ฟังก์ชันทุก 5 นาที
-setInterval(getData, 60 * 60 * 1000);
+setInterval(getData, 180 * 60 * 1000);
